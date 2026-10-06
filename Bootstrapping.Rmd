@@ -1,0 +1,1624 @@
+---
+title: 'Stat Lab Workshops: The Bootstrap'
+author: "Eric Gilleland"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load( tidyverse, kableExtra, boot )
+```
+
+# Franklin A. Graybill Statistics Laboratory
+
+**Stat Lab**
+
+- Expert statistical support for CSU researchers
+- Advice on study design, data analysis, and statistical software
+- Support for grant proposals and funded projects
+- Stat Lab faculty/staff:
+  - Dr. Ann Hess <https://scholar.google.com/citations?hl=en&user=oY2onasAAAAJ>
+  - Dr. Eric Gilleland <https://scholar.google.com/citations?user=63FaSg0AAAAJ&hl=en&oi=ao>
+- <https://statlab.colostate.edu>
+
+## Services
+
+- **Appointments** with faculty/staff consultants
+  - Support relating to research proposals, study design, more complicated analyses, manuscript preparation, etc.
+- **Drop-in with Data**
+  - Guidance with data formatting, data "wrangling", data visualization, and common statistical analyses
+  - No appointment necessary
+- Go to <https://statlab.colostate.edu/schedule-a-consulting-appointment/> to schedule an appointment or see the drop-in schedule and sign-in information
+
+## Stat Lab Funding
+
+- There is no charge for general consulting for graduate students, vet residents, or initial faculty meetings
+- This service is supported by:
+  - Statistics Department
+  - Ag Experiment Station
+  - College of Natural Sciences
+  - College of Veterinary Medicine and Biomedical Sciences
+- We rely on support from individual faculty users.  Even small contributions are very welcome
+  - <https://statlab.colostate.edu/support/>
+- Support requested for grant-funded projects
+- Fee-for-service data analysis is available for projects that go beyond general consulting
+
+# Getting started
+
+You can download this R markdown file, `Bootstrapping.Rmd`, from: <https://github.com/CSU-Stat-Lab/Workshops> if you want to follow along.
+
+This material makes use of the packages: `tidyverse` (in particular, `dplyr` and ggplot2`), `kableExtra` and `boot`.
+
+```{r}
+citation()
+citation("tidyverse")
+citation("dplyr")
+citation("ggplot2")
+citation("kableExtra")
+citation("boot")
+```
+
+
+# Introduction to the Bootstrap
+
+The **bootstrap** is a resampling method that allows us to estimate the uncertainty in a statistic without relying entirely on a theoretical sampling distribution. The basic idea is simple: we repeatedly sample from the data we observed, **with replacement**, and calculate the statistic of interest each time.
+
+## Why bootstrapping is so great
+
+- With just a few different types of bootstrap resampling, the methods can be applied to a wide range of statistics, and therefore can be used in many situations where classical parametric methodologies do not have a solution.
+
+- Far fewer assumptions about the distribution of the data and statistic of interest.
+
+- Proven to be more accurate than classical parametric methods (e.g., Hall 1991).
+
+## Cons of bootstrapping
+
+- Can be slow for large data sets and/or complicated analyses.
+
+- Usually not performed by software such as `lm`, `lmer`, requiring a little more work on the front end.
+
+## Ordinary Bootstrap
+
+To explain the most basic bootstrap procedure, it is helpful to use an example.
+
+### Example
+
+In this example, we will use the `mtcars` data (Henderson and Velleman 1981). Our outcome is mpg (miles per gallon), and we will compare the mean mpg across different numbers of cylinders. This setup will also be useful later when we fit a linear model with cyl as a categorical predictor.
+
+Suppose we want a confidence interval for the mean `mpg` for each cylinder category. Rather than using a theoretical formula for the standard error, we can estimate the sampling distribution of the mean by repeatedly resampling our data.
+
+For each bootstrap sample, we:
+
+1.  Sample observations **with replacement** within each cylinder category.
+2.  Calculate the mean `mpg` for each category.
+3.  Repeat steps 1 and 2 many times.
+4.  Use the resulting bootstrap distribution to construct a confidence interval.
+
+First, grab the data and manipulate them for the example.
+
+```{r}
+# load the data to our environment
+data(mtcars)
+
+# See the data structure
+str( cars )
+
+# Convert the cyl variable to factor
+dat <- mtcars |>
+  mutate(cyl = factor(cyl))
+
+# Calculate the sample size and mean for each cylinder group.
+s <- dat |>
+  group_by(cyl) |>
+  summarise(
+    n = n(),
+    mean_mpg = mean(mpg)
+  )
+kable( s, digits = 2 )
+
+```
+
+Next, write a function, `mean_mpg`, that estimates the mean mpg for one cylinder category. Ultimately, we will be calling a built-in R function called `boot` that itself will call `mean_mpg` many times using the data frame we supply but re-sampling with replacement from this data frame using an argument called `indices`. Therefore, `mean_mpg` must have `data` and `indices` as its first two arguments so that `boot` will know how to call the function.
+
+**Note**: The arguments do not need to be called `data` and `indices`, but the first two arguments to the function will be the data frame and the indices of the replicate samples.
+
+```{r}
+mean_mpg <- function(data, indices) {
+  
+  sample <- data[indices, ]
+  
+  mean(sample$mpg)
+} # end of 'mean_mpg' function.
+```
+
+The line of code `sample <- data[ indices, ]` will be the data frame we give to `boot` but with its rows re-sampled at each iteration of the bootstrap. The last line of the function is returned.
+
+Now, perform the bootstrap resampling using `boot`.
+
+```{r}
+set.seed(123)
+
+boot_4 <- boot(
+  data = filter(dat, cyl == 4),
+  statistic = mean_mpg,
+  R = 5000
+)
+
+boot_4
+```
+
+- `boot()` repeatedly takes samples from the data, and each time it uses our `mean_mpg()` function to calculate the statistic.
+
+- Notice that `boot` automatically reports the (statistical) bias and standard error.
+
+  - Statistical bias is defined to be the expected difference between an estimator and the "true" value of the parameter it is estimating.
+  - The bootstrap procedure gives a more accurate estimate of standard error than the more usual parametric procedures.
+
+Let's look at the bootstrap distribution.
+
+```{r}
+plot(boot_4)
+```
+
+**Note**: because we are interested in the mean, the Central Limit Theorem tells us that its distribution is approximately normal, which is clearly corroborated by the bootstrap sample. The assumptions for the usual parametric CI's predicated off the t-distribution are therefore met, but the bootstrap CI's are still more accurate.
+
+Now, obtain 95% CIs.
+
+```{r}
+boot.ci(boot_4, type = "perc")
+```
+
+### Practice
+
+Find 95% bootstrap CI's for the mean mpg of six-cylinder vehicles.
+
+```{r}
+
+```
+
+### Bootstrapping a vector of statistics
+
+In the above example, we returned a single value, the mean mpg for 4-cylinder vehicles. However, we can return an entire vector of statistics. For example, suppose we want to make inferences about the mean for each type of cylinders. To do so, we modify `mean_mpg` to return the mean for each category of `cyl` using the same `summarize` technique from earlier. We will call this new function `mean_mpg2`.
+
+- First, create `mean_mpg2`.
+
+The `boot()` function works best when the statistic function returns a numeric vector, so we will use `pull()` to return just the vector of means.
+
+```{r}
+mean_mpg2 <- function(data, indices) {
+  
+  sample <- data[indices, ]
+  
+  out <- sample |>
+    group_by(cyl) |>
+    summarize(mean_mpg = mean(mpg)) |>
+    pull(mean_mpg)
+  
+  return(out)
+  
+} # end of 'mean_mpg2' function.
+```
+
+- Next, some care needs to be taken in order that each replicate sample has the same number of rows for each cylinder type.
+  - We can do so by specifying the `strata` argument in the call to `boot`.
+
+The `strata` argument tells `boot()` which observations belong to each stratum. In this case, the strata are the different cylinder categories. Rather than sampling from all observations at once, `boot()` will resample **within each cylinder category**.
+
+Now we can run the bootstrap using `strata = dat$cyl`.
+
+```{r}
+set.seed(123)
+
+boot_all <- boot(
+  data = dat,
+  statistic = mean_mpg2,
+  R = 5000,
+  strata = dat$cyl
+)
+
+boot_all
+```
+
+The important addition is:
+
+`strata = dat$cyl`
+
+This argument tells `boot()` to treat each cylinder category as a separate stratum. Thus, when a bootstrap sample is created, observations are sampled with replacement **separately within the 4-, 6-, and 8-cylinder groups**.
+
+It is important to sample the same number of rows for each cylinder type because otherwise, if we simply resampled from the entire data set, some bootstrap samples could contain too few observations—or even no observations—from one of the cylinder categories. Stratified resampling guarantees that each bootstrap sample contains the correct number of observations from each category.
+
+### Examining the bootstrap results
+
+Our statistic function returns three values:
+
+1.  the mean mpg for 4-cylinder vehicles,
+2.  the mean mpg for 6-cylinder vehicles, and
+3.  the mean mpg for 8-cylinder vehicles.
+
+We can see the estimated bootstrap means and standard errors using:
+
+```{r}
+boot_all$t0
+head( boot_all$t )
+```
+
+The first output, `boot_all$t0`, contains the means calculated from the original data:
+
+```{r}
+boot_all$t0
+```
+
+These should correspond to the sample means we calculated earlier.
+
+The matrix `boot_all$t` contains the results from all 5,000 bootstrap samples. Each row represents one bootstrap sample, and each column represents one cylinder category.
+
+```{r}
+head(boot_all$t)
+```
+
+We can also calculate the bootstrap standard error for each cylinder category:
+
+```{r}
+apply(boot_all$t, 2, sd)
+```
+
+These values are the bootstrap-estimated standard errors of the three sample means.
+
+### Bootstrap confidence intervals
+
+Because `mean_mpg2()` returns three statistics, we need to tell `boot.ci()` which statistic we want a confidence interval for using the `index` argument.
+
+For the 4-cylinder mean:
+
+```{r}
+boot.ci(boot_all, type = "perc", index = 1)
+```
+
+For the 6-cylinder mean:
+
+```{r}
+boot.ci(boot_all, type = "perc", index = 2)
+```
+
+And for the 8-cylinder mean:
+
+```{r}
+boot.ci(boot_all, type = "perc", index = 3)
+```
+
+The `index` argument corresponds to the position of the statistic returned by `mean_mpg2()`:
+
+- `index = 1` → 4-cylinder mean
+- `index = 2` → 6-cylinder mean
+- `index = 3` → 8-cylinder mean
+
+We can put the three percentile confidence intervals together in a small table:
+
+```{r}
+ci_4 <- boot.ci(boot_all, type = "perc", index = 1)$percent[4:5]
+ci_6 <- boot.ci(boot_all, type = "perc", index = 2)$percent[4:5]
+ci_8 <- boot.ci(boot_all, type = "perc", index = 3)$percent[4:5]
+
+ci_table <- tibble(
+  cyl = c(4, 6, 8),
+  mean_mpg = boot_all$t0,
+  lower = c(ci_4[1], ci_6[1], ci_8[1]),
+  upper = c(ci_4[2], ci_6[2], ci_8[2])
+)
+
+kable(
+  ci_table,
+  digits = 2,
+  col.names = c("Cylinders", "Mean MPG", 
+                "Lower 95% CI", "Upper 95% CI")
+)
+```
+
+### Visualizing the bootstrap distributions
+
+Finally, we can look at the bootstrap distributions of the three means. One simple way is to convert the bootstrap results to a data frame and use `ggplot2`.
+
+```{r}
+boot_df <- as.data.frame(boot_all$t)
+
+names(boot_df) <- c("4 cylinders", "6 cylinders", "8 cylinders")
+
+boot_df <- boot_df |>
+  pivot_longer(
+    cols = everything(),
+    names_to = "cyl",
+    values_to = "mean_mpg"
+  )
+
+ggplot(boot_df, aes(x = mean_mpg)) +
+  geom_histogram(bins = 30, color = "white", fill = "steelblue") +
+  facet_wrap(~ cyl, scales = "free") +
+  labs(
+    x = "Bootstrap Mean MPG",
+    y = "Count",
+    title = "Bootstrap Distributions of Mean MPG"
+  ) +
+  theme_minimal()
+```
+
+Each histogram represents the estimated sampling distribution of the mean mpg for one cylinder category.
+
+The main idea is that **stratified bootstrapping allows us to estimate several statistics simultaneously while preserving the original group sizes**.
+
+- Every bootstrap sample contains the same number of 4-, 6-, and 8-cylinder vehicles as the original data,
+- we obtain a separate bootstrap distribution—and therefore a separate confidence interval—for the mean mpg of each group.
+
+### Practice
+
+Use the stratified bootstrap results to answer the following questions:
+
+1.  Which cylinder category has the largest bootstrap standard error for its mean mpg?
+2.  Which cylinder category has the widest 95% bootstrap confidence interval?
+3.  Based on the bootstrap confidence intervals, which cylinder categories appear to have clearly different mean mpg values?
+4.  Why would it be problematic to use `boot()` without specifying `strata` when our goal is to estimate the mean mpg separately for each cylinder category?
+
+# Bootstrap for a Linear Model
+
+So far, we have used the bootstrap to estimate the uncertainty in the mean mpg for each cylinder category directly. We can obtain analogous results using a linear model. The advantage is that the same general approach can be extended to much more complicated models. Rather than calculating the statistic directly from each bootstrap sample, we can fit a model to each bootstrap sample and then extract the quantities of interest from the fitted model.
+
+## Bootstrap the linear model
+
+You may recall that using a linear model (LM) provides a more efficient, and more powerful, method for making inferences about the means of multiple categories. We can again apply bootstrap techniques to obtain even more accurate inferences.
+
+We will use the same data and fit a model in which `cyl` is treated as a categorical predictor:
+
+```{r}
+mod <- lm(mpg ~ cyl, data = dat)
+
+summary(mod)
+```
+
+Because `cyl` is a factor, the model uses one cylinder category as the reference group. By default, R uses the first level, which is 4 cylinders.
+
+Therefore:
+
+- the intercept is the estimated mean mpg for 4-cylinder vehicles;
+- the coefficient for `cyl6` is the difference between the mean mpg for 6-cylinder and 4-cylinder vehicles;
+- the coefficient for `cyl8` is the difference between the mean mpg for 8-cylinder and 4-cylinder vehicles.
+
+We can obtain the estimated mean mpg for each cylinder category directly from the model:
+
+```{r}
+coef(mod)
+```
+
+However, the coefficients are not quite as convenient for our purposes as the three group means. We can use `predict()` to obtain the fitted mean for each cylinder category:
+
+```{r}
+newdat <- tibble(
+  cyl = factor(c(4, 6, 8), levels = levels(dat$cyl))
+)
+
+predict(mod, newdata = newdat)
+```
+
+These values should be the same three means that we obtained earlier by grouping the data.
+
+## Case resampling
+
+One way to bootstrap a linear model would be to do exactly what we did before: repeatedly resample the observations with replacement, fit the model to each bootstrap sample, and save the estimated means.
+
+To do this procedure with `boot()`, we need a new statistic function. It will take the resampled data and fit the linear model.
+
+```{r}
+lm_means <- function(data, indices) {
+  
+  sample <- data[indices, ]
+  
+  mod <- lm(mpg ~ cyl, data = sample)
+  
+  newdat <- tibble(
+    cyl = factor(c(4, 6, 8), levels = levels(data$cyl))
+  )
+  
+  predict(mod, newdata = newdat)
+  
+} # end of 'lm_means' function.
+```
+
+We can now use the same stratified bootstrap that we used earlier:
+
+```{r}
+set.seed(123)
+
+boot_lm <- boot(
+  data = dat,
+  statistic = lm_means,
+  R = 5000,
+  strata = dat$cyl
+)
+
+boot_lm
+```
+
+The three statistics returned by `lm_means()` are the estimated mean mpg for 4-, 6-, and 8-cylinder vehicles, respectively.
+
+Thus, we can obtain the percentile bootstrap confidence intervals just as before:
+
+```{r}
+boot.ci(boot_lm, type = "perc", index = 1)
+boot.ci(boot_lm, type = "perc", index = 2)
+boot.ci(boot_lm, type = "perc", index = 3)
+```
+
+The important observation is that these results are essentially the same as those from our earlier bootstrap, which is not surprising. With a categorical predictor and an intercept, the fitted value for each cylinder category is simply that group's sample mean.
+
+## A different way to bootstrap the linear model
+
+The previous approach resampled the observations themselves. This approach is called a **case bootstrap** or **pairs bootstrap**.
+
+There is another approach that is particularly useful for LM's: instead of repeatedly resampling the observations, we can fit the model once and resample its **residuals**.
+
+The idea is as follows:
+
+1.  Fit the linear model to the original data.
+2.  Calculate the fitted values and residuals.
+3.  Resample the residuals with replacement.
+4.  Add the resampled residuals to the fitted values to create a new bootstrap response.
+5.  Fit the same linear model to this new response.
+6.  Extract the quantities of interest.
+7.  Repeat many times.
+
+The important difference is that we are no longer resampling the explanatory variables. The observed `cyl` values remain fixed, while we generate new values of `mpg` by adding resampled residuals to the fitted values.
+
+Conceptually:
+
+``` text
+new mpg = fitted mpg + resampled residual
+```
+
+This approach is attractive for LM's because we can fit the model once and then work directly with its residuals.
+
+- No need to use the `strata` argument with this approach.
+
+### Residual bootstrap function
+
+First, fit our model and save the fitted values and residuals:
+
+```{r}
+mod <- lm(mpg ~ cyl, data = dat)
+
+fitted_values <- fitted(mod)
+residuals <- resid(mod)
+```
+
+Now we can write a statistic function that resamples the residuals.
+
+```{r}
+lm_resid <- function(data, indices) {
+  
+  # Fit the model to the original data.
+  mod <- lm(mpg ~ cyl, data = data)
+  
+  # Resample the residuals.
+  resampled_resid <- residuals(mod)[indices]
+  
+  # Create a new bootstrap response.
+  data_boot <- data |>
+    mutate(
+      mpg_boot = fitted(mod) + resampled_resid
+    )
+  
+  # Fit the model to the bootstrap response.
+  mod_boot <- lm(mpg_boot ~ cyl, data = data_boot)
+  
+  # Obtain the estimated mean for each cylinder category.
+  newdat <- tibble(
+    cyl = factor(c(4, 6, 8), levels = levels(data$cyl))
+  )
+  
+  predict(mod_boot, newdata = newdat)
+  
+} # end of 'lm_resid' function.
+```
+
+There is an important detail here. The `indices` supplied by `boot()` are now being used to resample the **residuals**, rather than the rows of the original data.
+
+We can run the residual bootstrap:
+
+```{r}
+set.seed(123)
+
+boot_lm_resid <- boot(
+  data = dat,
+  statistic = lm_resid,
+  R = 5000
+)
+
+boot_lm_resid
+```
+
+Notice that we do **not** need the `strata` argument here. The residuals are being resampled rather than the observations themselves.
+
+## Why don't we need `strata`?
+
+Earlier, we needed:
+
+```{r}
+strata = dat$cyl
+```
+
+because we wanted to resample observations separately within each cylinder category.
+
+With the residual bootstrap, the cylinder values are not resampled. They remain exactly as observed in the original data. Instead, we generate a new response variable by adding resampled residuals to the original fitted values.
+
+Thus, the number of observations in each cylinder category is automatically preserved.
+
+This caveat is one of the advantages of residual resampling for an LM.
+
+## Bootstrap confidence intervals
+
+We can obtain confidence intervals for the estimated means just as we did before:
+
+```{r}
+boot.ci(boot_lm_resid, type = "perc", index = 1)
+boot.ci(boot_lm_resid, type = "perc", index = 2)
+boot.ci(boot_lm_resid, type = "perc", index = 3)
+```
+
+We can also examine the bootstrap distributions:
+
+```{r}
+plot(boot_lm_resid)
+```
+
+And, as before, the standard errors can be calculated from the bootstrap replicates:
+
+```{r}
+apply(boot_lm_resid$t, 2, sd)
+```
+
+## Comparing the two approaches
+
+We have now seen two ways to bootstrap the same LM.
+
+**Case bootstrap:**
+
+- Resample observations with replacement.
+- Fit the model to each resampled data set.
+- Extract the estimated means.
+
+**Residual bootstrap:**
+
+- Fit the model once.
+- Keep the explanatory variables fixed.
+- Resample the residuals.
+- Create a new response from the fitted values and resampled residuals.
+- Fit the model to the new response.
+- Extract the estimated means.
+
+The case bootstrap is more general because it does not depend as strongly on the LM structure. The residual bootstrap, however, takes advantage of that structure and can be particularly useful when we want to preserve the observed explanatory variables.
+
+For this simple example, the two approaches produce very similar results. However, they are conceptually different and can behave differently in more complicated settings.
+
+### A note about assumptions
+
+Residual bootstrapping relies on assumptions about the model errors. In particular, the usual residual bootstrap assumes that the residuals are reasonably representative of the underlying errors and that the error distribution is appropriately captured by resampling the residuals.
+
+For ordinary linear regression, this approach is most natural when the errors are independent and have approximately constant variance.
+
+If there is substantial heteroskedasticity, for example, simply resampling the residuals may not be appropriate. There are other approaches, such as a **wild bootstrap**, that are designed for that situation.
+
+### Practice
+
+1.  Compare the bootstrap standard errors from the case bootstrap (`boot_lm`) and residual bootstrap (`boot_lm_resid`).
+
+2.  Compare the 95% percentile confidence intervals from the two approaches.
+
+3.  Plot the bootstrap distributions for the 4-, 6-, and 8-cylinder means from both methods.
+
+4.  Explain why the residual bootstrap does not require the `strata` argument.
+
+# Bootstrapping an LM with heteroskedastic residuals
+
+The residual bootstrap works well when the errors have approximately constant variance. But what happens when the variability of the response changes as a function of the predictors?
+
+This situation is called **heteroskedasticity**.
+
+For example, suppose we have a linear relationship between `y` and `x`, but the observations become increasingly spread out as `x` increases:
+
+``` text
+       |
+     y |                         *
+       |                      *     *
+       |                  *       *    *
+       |              *   *    *       *
+       |          *  *  * *  *      *
+       |       * * * *
+       |    * * *
+       |  **
+       +--------------------------------
+                         x
+```
+
+The mean relationship may still be linear, but the variance around that relationship is not constant.
+
+This situation creates a problem for the ordinary residual bootstrap.
+
+## A data set with heteroskedasticity
+
+For this example, we will simulate data where the mean relationship is linear but the error variance increases with `x`.
+
+```{r}
+set.seed(123)
+
+n <- 100
+
+dat_het <- tibble(
+  x = runif(n, 1, 10)
+) |>
+  mutate(
+    y = 2 + 3 * x + rnorm(n, mean = 0, sd = 0.5 * x)
+  )
+```
+
+The true mean relationship is
+
+$E(Y \mid X) = 2 + 3X$
+
+but the standard deviation of the errors increases with `x`.
+
+Let's plot the data.
+
+```{r}
+ggplot(dat_het, aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  theme_minimal()
+```
+
+The fitted regression line looks reasonable, but notice that the observations become increasingly spread out as `x` increases.
+
+This relationship is exactly the type of situation where we want to be careful about how we bootstrap.
+
+**Note**: You may recall that heteroskedasticity is also problematic for parametric inferences from an LM. In that case, one might try to transform the response variable in order to obtain homoskedastic residuals, or use a generalized LM to model the variance as a function of the mean.
+
+## Fit the LM
+
+First, fit the ordinary LM:
+
+```{r}
+mod_het <- lm(y ~ x, data = dat_het)
+
+summary(mod_het)
+```
+
+We can also examine the residuals.
+
+```{r}
+ggplot(
+  data.frame(
+    fitted = fitted(mod_het),
+    residuals = resid(mod_het)
+  ),
+  aes(x = fitted, y = residuals)
+) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme_minimal()
+```
+
+The characteristic "fanning out" of the residuals is evidence of heteroskedasticity.
+
+We can also use the standard diagnostic plots:
+
+```{r}
+plot(mod_het, which = 1)
+```
+
+The important feature is that the residual variability increases as the fitted values increase.
+
+## Why ordinary residual resampling is a problem
+
+Recall what we did with the residual bootstrap.
+
+We generated a new response according to
+
+$$
+Y_i^* = \hat{Y}_i + e_i^*,
+$$
+
+where ($e_i^*$) is a residual sampled with replacement from the collection of residuals.
+
+The problem is that ordinary residual resampling treats all residuals as though they came from the same distribution.
+
+In other words, it assumes something like
+
+$e_i \sim \text{one common distribution}.$
+
+But with heteroskedasticity, we instead have something more like
+
+$e_i \sim \text{a distribution whose variance depends on } X_i.$
+
+For our simulated data, observations at large values of `x` have much more variable errors than observations at small values of `x`.
+
+If we randomly shuffle all of the residuals and assign them to all of the fitted values, we can accidentally give a small fitted value a very large residual or a large fitted value a very small residual.
+
+The ordinary residual bootstrap therefore destroys the relationship between the size of the error and the predictor.
+
+This issue motivates the **wild bootstrap**.
+
+# The Wild Bootstrap
+
+The basic idea of the wild bootstrap is remarkably simple.
+
+Instead of resampling the residuals themselves, we keep each observation's residual associated with its observation and multiply it by a randomly generated variable.
+
+We generate
+
+$e_i^* = e_i v_i,$
+
+where $v_i$ is a random variable with
+
+$E[v_i] = 0$
+
+and
+
+$\mbox{Var}(v_i) = 1.$
+
+We then construct the bootstrap response as
+
+$Y_i^* = \hat{Y}_i + e_i v_i.$
+
+The key difference is that we **do not randomly move residuals between observations**.
+
+Each observation keeps its original residual magnitude, but that residual is randomly given a positive or negative sign—or, depending on the particular wild-bootstrap distribution, is multiplied by another random value.
+
+This procedure preserves the relationship between the magnitude of the residual and the predictor.
+
+## A simple version: Rademacher weights
+
+One of the simplest choices is the **Rademacher distribution**.
+
+For each observation, randomly generate
+
+$v_i = \left\{\begin{array}{cc}1 & p=1/2 \cr -1 & p=1/2\end{array}\right.$
+
+In R, we can generate these values with:
+
+```{r}
+set.seed(123)
+
+sample(c(-1, 1), size = 10, replace = TRUE)
+```
+
+For example, if an observation has a residual of `2.3`, the wild bootstrap might give it a bootstrap residual of either `2.3` or `-2.3`.
+
+The important thing is that its magnitude remains `2.3`.
+
+## Writing the wild-bootstrap statistic function
+
+We can now modify our residual-bootstrap function.
+
+```{r}
+wild_lm <- function(data, indices) {
+  
+  # Fit the model to the original data.
+  mod <- lm(y ~ x, data = data)
+  
+  # Get fitted values and residuals.
+  fitted_values <- fitted(mod)
+  residuals <- resid(mod)
+  
+  # Generate Rademacher weights.
+  v <- sample(
+    c(-1, 1),
+    size = nrow(data),
+    replace = TRUE
+  )
+  
+  # Create the bootstrap response.
+  data_boot <- data |>
+    mutate(
+      y_boot = fitted_values + residuals * v
+    )
+  
+  # Fit the model to the bootstrap response.
+  mod_boot <- lm(y_boot ~ x, data = data_boot)
+  
+  # Return the regression coefficients.
+  coef(mod_boot)
+  
+}
+```
+
+Notice something interesting about this function.
+
+We no longer use `indices` to select observations or residuals. The argument is still present because `boot()` expects the statistic function to have the appropriate arguments, but the bootstrap resampling is being performed by the randomly generated weights `v`.
+
+## Run the wild bootstrap
+
+Now we can use `boot()` to repeat this process 5,000 times.
+
+```{r}
+set.seed(123)
+
+boot_wild <- boot(
+  data = dat_het,
+  statistic = wild_lm,
+  R = 5000
+)
+
+boot_wild
+```
+
+Our statistic returns two values:
+
+1.  the intercept;
+2.  the slope for `x`.
+
+We can therefore obtain a percentile bootstrap confidence interval for the slope:
+
+```{r}
+boot.ci(
+  boot_wild,
+  type = "perc",
+  index = 2
+)
+```
+
+The slope is usually the quantity we are most interested in here because it describes the relationship between `x` and the expected value of `y`.
+
+We can also obtain the confidence interval for the intercept:
+
+```{r}
+boot.ci(
+  boot_wild,
+  type = "perc",
+  index = 1
+)
+```
+
+## Looking at the bootstrap distribution
+
+Let's look at the bootstrap distribution of the slope.
+
+```{r}
+ggplot(
+  tibble(slope = boot_wild$t[, 2]),
+  aes(x = slope)
+) +
+  geom_histogram(
+    bins = 40,
+    color = "white",
+    fill = "steelblue"
+  ) +
+  geom_vline(
+    xintercept = coef(mod_het)[2],
+    color = "red",
+    linewidth = 1
+  ) +
+  labs(
+    x = "Bootstrap slope",
+    y = "Count",
+    title = "Wild Bootstrap Distribution of the Slope"
+  ) +
+  theme_minimal()
+```
+
+The red line represents the slope estimated from the original data. The histogram represents the sampling distribution of the slope estimated through the wild bootstrap.
+
+## Comparing the three bootstrap approaches
+
+At this point, we have three related bootstrap procedures.
+
+### Case bootstrap
+
+We repeatedly sample observations with replacement:
+
+$(X_i^*,Y_i^*) \sim \text{observed data}.$
+
+We then fit the model to each bootstrap sample.
+
+This procedure is quite general and does not require us to assume a particular regression error structure.
+
+### Ordinary residual bootstrap
+
+We fit the model once and then repeatedly resample the residuals:
+
+$Y_i^* = \hat{Y}_i + e_i^*.$
+
+This procedure works naturally when the errors have approximately constant variance.
+
+### Wild bootstrap
+
+We fit the model once and generate:
+
+$Y_i^* = \hat{Y}_i + e_i v_i.$
+
+The residual stays associated with its original observation, but we randomly modify it using a mean-zero, variance-one random variable.
+
+This method makes the wild bootstrap particularly useful when we suspect that the variance of the response is a function of the predictor.
+
+## Seeing the difference
+
+It is useful to put the three procedures side by side:
+
+| Bootstrap | What gets resampled? | Handles heteroskedasticity? |
+|----|----|----|
+| Case bootstrap | Observations | Generally yes |
+| Residual bootstrap | Residuals | Generally no |
+| Wild bootstrap | Random weights applied to residuals | Yes |
+
+The important conceptual distinction is between the last two.
+
+With the **ordinary residual bootstrap**, we randomly select a residual from the entire collection:
+
+`resampled_residual <- sample(residuals, replace = TRUE)`
+
+This assumes that the residuals are exchangeable.
+
+With the **wild bootstrap**, we retain each observation's residual:
+
+`bootstrap_residual <- residual * random_weight`
+
+Thus, observations that naturally have larger residuals remain associated with the part of the predictor space where they occurred.
+
+## A visual comparison
+
+We can illustrate this difference directly.
+
+First, calculate the fitted values and residuals:
+
+```{r}
+mod_het <- lm(y ~ x, data = dat_het)
+
+dat_het <- dat_het |>
+  mutate(
+    fitted = fitted(mod_het),
+    residual = resid(mod_het)
+  )
+```
+
+Now create one ordinary residual bootstrap sample:
+
+```{r}
+set.seed(123)
+
+dat_resid <- dat_het |>
+  mutate(
+    y_boot = fitted +
+      sample(residual, size = n(), replace = TRUE)
+  )
+```
+
+And one wild-bootstrap sample:
+
+```{r}
+set.seed(123)
+
+dat_wild <- dat_het |>
+  mutate(
+    v = sample(c(-1, 1), size = n(), replace = TRUE),
+    y_boot = fitted + residual * v
+  )
+```
+
+We can compare them visually:
+
+```{r}
+p1 <- ggplot(dat_resid, aes(x = x, y = y_boot)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Ordinary Residual Bootstrap") +
+  theme_minimal()
+
+p2 <- ggplot(dat_wild, aes(x = x, y = y_boot)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(title = "Wild Bootstrap") +
+  theme_minimal()
+
+p1
+p2
+```
+
+The wild-bootstrap sample retains the increasing variability associated with increasing `x`. The ordinary residual bootstrap does not preserve this structure as directly because it randomly redistributes residuals across the fitted values.
+
+## The big picture
+
+The progression we have followed is:
+
+``` text
+Ordinary bootstrap
+       |
+       v
+Resample observations
+       |
+       v
+Linear model
+       |
+       v
+Resample residuals
+       |
+       |  heteroskedasticity
+       v
+Wild bootstrap
+```
+
+# Mammen Weights and Leverage-Adjusted Wild Bootstrap
+
+The Rademacher wild bootstrap is one of the simplest versions of the wild bootstrap. For each observation, we multiply the residual by either `-1` or `+1`, with equal probability.
+
+There are other choices for the random weights. One particularly useful choice is the **Mammen distribution**.
+
+## Mammen weights
+
+The Mammen distribution uses two possible values:
+
+$$v_i = \begin{cases} 
+\frac{1-\sqrt{5}}{2} & \text{with probability } \frac{\sqrt{5}+1}{2\sqrt{5}}, \\ 
+\frac{1+\sqrt{5}}{2} & \text{with probability } \frac{\sqrt{5}-1}{2\sqrt{5}}. 
+\end{cases}$$
+
+The probabilities and values are again chosen so that the weights have mean zero and variance one.
+
+The mean-zero property is important because we want the bootstrap errors to be centered around zero. The variance-one property ensures that the overall scale of the errors is preserved.
+
+We can verify these properties in R:
+
+```{r id="axp4qw"}
+sqrt5 <- sqrt(5)
+
+mammen_values <- c( (1 - sqrt5) / 2, (1 + sqrt5) / 2 )
+
+mammen_probs <- c( (sqrt5 + 1) / (2 * sqrt5), 
+                   (sqrt5 - 1) / (2 * sqrt5) )
+
+mammen_values 
+mammen_probs
+
+```
+
+We can check the theoretical mean and variance:
+
+```{r id="4obz3f"}
+sum(mammen_values * mammen_probs)
+
+sum(mammen_values^2 * mammen_probs)
+
+```
+
+The results should be approximately 0 and 1, respectively.
+
+### Generating Mammen weights
+
+We can generate a set of Mammen weights using `sample()`:
+
+```{r id="e0clm5"}
+set.seed(123)
+
+sample( mammen_values, size = 20, replace = TRUE, prob = mammen_probs )
+```
+
+Unlike the Rademacher distribution, the two possible weights do not have equal probability.
+
+## Why worry about leverage?
+
+There is another issue we should consider when bootstrapping a linear model: **leverage**.
+
+Recall that the fitted values from an LM can be written as
+
+$\hat{\mathbf{y}} = H\mathbf{y},$
+
+where (H) is the hat matrix.
+
+The diagonal elements of (H),
+
+$h_{ii},$
+
+are called the **leverage values**.
+
+An observation with a large leverage value has an unusual value of the predictor variable and therefore has greater influence on its own fitted value.
+
+We can obtain the leverage values from our model using:
+
+```{r id="r6m7cl"}
+mod_het <- lm(y ~ x, data = dat_het)
+
+leverage <- hatvalues(mod_het)
+
+head(leverage)
+
+```
+
+Let's look at them graphically:
+
+```{r id="v8m7bv"}
+ggplot( tibble( x = dat_het$x, leverage = leverage),   
+        aes(x = x, y = leverage) ) +   
+  geom_point() +   
+  labs( x = "x", y = "Leverage", title = "Leverage Values" ) +
+  theme_minimal()
+```
+
+For a simple LM, observations near the extremes of `x` tend to have greater leverage.
+
+## Leverage and residuals
+
+There is an important connection between leverage and residuals.
+
+Even if the true errors all have the same variance, the ordinary residuals do not have exactly the same variance. In fact,
+
+$\mbox{Var}(e_i) = \sigma^2(1-h_{ii}).$
+
+Thus, observations with high leverage tend to have smaller observed residuals because the residual has been partially "used up" in estimating the fitted value.
+
+This phenomena is another reason that directly resampling the raw residuals can be problematic.
+
+A common correction is to divide the residual by
+
+$\sqrt{1-h_{ii}}.$
+
+Applying this correction gives the **HC2 residual adjustment**:
+
+$e_i^{HC2} = \frac{e_i}{\sqrt{1-h_{ii}}}.$
+
+The adjustment attempts to put residuals on a more comparable scale before we use them in the bootstrap.
+
+## The leverage-adjusted wild bootstrap
+
+We can now combine the two ideas.
+
+First, adjust the residuals for leverage:
+
+$e_i^{HC2} = \frac{e_i}{\sqrt{1-h_{ii}}}.$
+
+Then multiply each adjusted residual by a Mammen random weight:
+
+$e_i^* = e_i^{HC2}v_i.$
+
+Finally, construct the bootstrap response:
+
+$Y_i^* = \hat{Y}_i + e_i^*.$
+
+## Implementing it in R
+
+We can write a new bootstrap statistic function.
+
+```{r id="p2v7gk"}
+wild_mammen <- function(data, indices) {
+
+  # Fit the original model. 
+  mod <- lm(y ~ x, data = data)
+
+  # Extract fitted values, residuals, and leverage. 
+  fitted_values <- fitted(mod) 
+  residuals <- resid(mod) 
+  leverage <- hatvalues(mod)
+
+  # Mammen distribution. 
+  sqrt5 <- sqrt(5)
+  mammen_values <- c( (1 - sqrt5) / 2, (1 + sqrt5) / 2 )
+  mammen_probs <- c( (sqrt5 + 1) / (2 * sqrt5), 
+                     (sqrt5 - 1) / (2 * sqrt5) )
+
+  # Generate Mammen weights. 
+  v <- sample( mammen_values, size = nrow(data), 
+               replace = TRUE, prob = mammen_probs )
+
+  # HC2 leverage adjustment. 
+  adjusted_residuals <- residuals / sqrt(1 - leverage)
+
+  # Generate bootstrap response. 
+  data_boot <- data |> 
+    mutate( y_boot = fitted_values + adjusted_residuals * v )
+
+  # Fit the model to the bootstrap data. 
+  mod_boot <- lm(y_boot ~ x, data = data_boot)
+
+  # Return the coefficients. 
+  coef(mod_boot)
+
+} # end of 'wild_mammen' function. 
+```
+
+Notice that we are still fitting the model to the **original data first**. We then use the fitted values, residuals, and leverage from that model to generate a new response.
+
+We are not resampling the observations.
+
+## Run the bootstrap
+
+Now we can use `boot()` just as before:
+
+```{r id="0qj6p5"}
+set.seed(123)
+
+boot_mammen <- boot( data = dat_het, statistic = wild_mammen, 
+                     R = 5000 )
+
+boot_mammen
+```
+
+The second column of `boot_mammen$t` contains the bootstrap estimates of the slope.
+
+We can obtain a percentile confidence interval:
+
+```{r id="r4g2ty"}
+boot.ci( boot_mammen, type = "perc", index = 2 )
+```
+
+And the bootstrap standard error is:
+
+```{r id="1z4qj9"}
+sd(boot_mammen$t[, 2])
+```
+
+## Comparing Rademacher and Mammen wild bootstraps
+
+We now have two versions of the wild bootstrap.
+
+The first used Rademacher weights, which are $1$ or $-1$ with probability $1/2$.
+
+The second uses Mammen weights, which are $(1-\sqrt{5})/2$ with probability $(1+\sqrt{5})/(2\sqrt{5})$ or $(1+\sqrt{5})/2$ with probability $(\sqrt{5}-1)/(2\sqrt{5})$.
+
+Both distributions have mean zero and variance one.
+
+We can compare their bootstrap standard errors:
+
+```{r id="v5xqkv"}
+sd(boot_wild$t[, 2]) 
+sd(boot_mammen$t[, 2])
+```
+
+We can also compare their confidence intervals:
+
+```{r id="j1u2sx"}
+boot.ci( boot_wild, type = "perc", index = 2 )
+
+boot.ci( boot_mammen, type = "perc", index = 2 )
+```
+
+The results will not necessarily be identical. The two weighting distributions generate somewhat different bootstrap distributions, particularly in smaller samples.
+
+## Why use Mammen weights?
+
+Mammen weights are attractive because they match the first three moments of the standard normal distribution:
+
+$E[v]=0$, $E[v^2]=1$, and $E[v^3]=1$.
+
+The third-moment property can give the Mammen wild bootstrap better higher-order properties than the simple Rademacher version in some LM settings.
+
+The important lesson for this workshop is not that Mammen weights are always "better," but that the wild bootstrap is a **family of methods**. Different distributions can be used for the random weights, provided they satisfy the appropriate moment conditions.
+
+### Practice
+
+1.  Calculate the leverage values for `dat_het`. Which observations have the largest leverage?
+
+2.  Compare the ordinary residuals with the HC2-adjusted residuals.
+
+3.  Generate 5,000 Mammen weights and make a histogram. Compare the histogram with a histogram of 5,000 Rademacher weights.
+
+4.  Compare the bootstrap standard errors for the slope from:
+
+    - the ordinary residual bootstrap,
+    - the Rademacher wild bootstrap,
+    - the Mammen wild bootstrap, and
+    - the leverage-adjusted Mammen wild bootstrap.
+
+5.  Compare the resulting 95% confidence intervals.
+
+# Bootstrap Assumptions and BCa Confidence Intervals
+
+At this point, we have used the bootstrap in several different ways. It is tempting to say that the bootstrap requires few or no assumptions. This statement is true in comparison with many classical parametric procedures, but it is important to be more precise.
+
+**The bootstrap is not assumption-free.**
+
+The bootstrap works by treating the observed data as a reasonable approximation to the population from which the data were sampled. If that approximation is poor, the bootstrap may also provide poor estimates of sampling uncertainty.
+
+## What assumptions does the bootstrap make?
+
+The assumptions depend somewhat on which bootstrap method we use, but there are several general considerations.
+
+### 1. The observations should represent the population of interest
+
+- The basic bootstrap treats the observed sample as a stand-in for the population.
+
+- If our sample is systematically different from the population we want to make inferences about, resampling the sample cannot fix that problem.
+
+For example, suppose we want to estimate the average height of all adults in a country but our sample consists entirely of professional basketball players. Repeatedly resampling those observations will give us a very good estimate of the uncertainty associated with the basketball-player sample—but it will not make the sample representative of the general population.
+
+- The bootstrap cannot correct for **selection bias** or a poorly designed sample.
+
+### 2. Observations should generally be independent
+
+- The ordinary bootstrap assumes that observations can be resampled independently.
+
+- This assumption is reasonable for many simple random samples, but it is not appropriate for every type of data.
+
+For example, suppose we collect repeated measurements from the same individual:
+
+``` text
+Person 1:  observation 1, observation 2, observation 3
+Person 2:  observation 1, observation 2, observation 3
+Person 3:  observation 1, observation 2, observation 3
+```
+
+These observations are not necessarily independent.
+
+Randomly resampling individual observations could destroy the dependence structure.
+
+Other examples include:
+
+- time-series data;
+- spatial data;
+- clustered data;
+- repeated-measures data;
+- longitudinal studies.
+
+For these situations, we often need a modified bootstrap, such as a **block bootstrap** for time series or a **cluster bootstrap** for clustered observations.
+
+The general principle is:
+
+> **The bootstrap resampling scheme should respect the dependence structure in the data.**
+
+### 3. The statistic should be reasonably estimable from the sample
+
+- The bootstrap works best when the statistic can be estimated reasonably well from the observed sample.
+
+- This assumption can be a problem with very small samples or statistics that are extremely sensitive to individual observations.
+
+For example, if one observation completely determines a statistic, repeatedly resampling the data may produce a very unstable bootstrap distribution.
+
+This issue is particularly important for statistics such as extreme quantiles, maxima, or other statistics that depend heavily on a small number of observations.
+
+## Bootstrap assumptions depend on the bootstrap method
+
+Our discussion of the residual and wild bootstrap illustrates another important point.
+
+Different bootstrap procedures make different assumptions.
+
+For example:
+
+| Method | Important consideration |
+|------------------------------------|------------------------------------|
+| Case bootstrap | Observations can be resampled appropriately |
+| Residual bootstrap | Model errors should be reasonably exchangeable |
+| Stratified bootstrap | Resampling should respect the strata |
+| Wild bootstrap | Designed to allow nonconstant error variance |
+| Block bootstrap | Designed for dependent observations |
+| m less than n bootstrap | Designed for observations following a heavy-tail distribution |
+
+Thus, we should not ask simply:
+
+> "Does the bootstrap require assumptions?"
+
+Instead, we should ask:
+
+> **"What assumptions does this particular bootstrap procedure require?"**
+
+# Confidence Intervals from the Bootstrap
+
+So far, we have used **percentile confidence intervals**.
+
+The percentile method is conceptually simple.
+
+If the bootstrap distribution of our statistic is
+
+$\hat{\theta}_1^*,\hat{\theta}_2^*,\ldots,\hat{\theta}_R^*,$
+
+we find the 2.5-th and 97.5-th percentiles of that distribution and use them as the endpoints of a 95% confidence interval.
+
+This method works well in many situations, but it has a limitation.
+
+The bootstrap distribution may not be centered at the original estimate, and it may not be symmetric.
+
+When the bootstrap distribution is noticeably biased or skewed, the simple percentile interval may not have the desired coverage properties.
+
+This issue motivates the **BCa confidence interval**.
+
+## The BCa Confidence Interval
+
+BCa stands for:
+
+> **Bias-Corrected and Accelerated**
+
+The BCa interval modifies the percentile interval in two ways.
+
+### Bias correction
+
+The first adjustment accounts for **bias** in the bootstrap distribution.
+
+Suppose our original estimate is $\hat{\theta}$.
+
+If the bootstrap estimates tend to be systematically larger or smaller than $\hat{\theta}$, the bootstrap distribution is not centered where we might expect it to be.
+
+The bias-correction component of BCa adjusts the percentile cutoffs to account for this behavior.
+
+### Acceleration
+
+The second adjustment is called **acceleration**.
+
+The acceleration term accounts for the fact that the standard error of the statistic may change as the underlying data change.
+
+In practical terms, this adjustment allows the BCa interval to account for **asymmetry in the relationship between the statistic and the data**.
+
+The acceleration parameter is commonly estimated using the **jackknife**.
+
+Thus, BCa combines information from both the bootstrap and the jackknife.
+
+## Percentile versus BCa
+
+The percentile interval simply uses:
+
+$\hat{\theta}^*_{0.025}\quad\text{and}\quad\hat{\theta}^*_{0.975}$
+
+quantiles of the bootstrap distribution.
+
+BCa instead finds adjusted percentiles.
+
+The BCa endpoints do not necessarily correspond to the 2.5-th and 97.5-th percentiles of the bootstrap distribution.
+
+## Calculating BCa intervals in R
+
+The `boot.ci()` function can calculate BCa intervals directly.
+
+For example, using our original 4-cylinder bootstrap:
+
+```{r}
+boot.ci( boot_4, type = "bca" )
+```
+
+We can compare this with the percentile interval:
+
+```{r}
+boot.ci(   boot_4,   type = "perc" )
+```
+
+The two intervals may be similar, but they do not have to be.
+
+We can also calculate both at the same time:
+
+```{r}
+boot.ci(   boot_4,   type = c("perc", "bca") )
+```
+
+## BCa intervals for our multiple-statistic bootstrap
+
+Recall that `boot_all` contains bootstrap estimates of the mean mpg for all three cylinder categories.
+
+We can obtain a BCa interval for the 4-cylinder mean using:
+
+```{r}
+boot.ci(   boot_all,   type = "bca",   index = 1 )
+```
+
+For the 6-cylinder mean:
+
+```{r}
+boot.ci(   boot_all,   type = "bca",   index = 2 )
+```
+
+And for the 8-cylinder mean:
+
+```{r}
+boot.ci(   boot_all,   type = "bca",   index = 3 )
+```
+
+Notice that we still use `index` because our statistic function returns three quantities.
+
+## Why might BCa be useful?
+
+When the distribution is clearly asymmetric, a simple percentile interval uses equal tail probabilities from the bootstrap distribution. BCa adjusts those probabilities to account for both bias and acceleration.
+
+These adjustments can be particularly useful when:
+
+- the bootstrap distribution is skewed;
+- the statistic has noticeable bias;
+- the statistic is nonlinear;
+- the sampling distribution is asymmetric;
+- the sample size is relatively small.
+
+BCa is not guaranteed to solve every problem, however. A sophisticated confidence interval cannot compensate for a fundamentally inappropriate bootstrap design or a poor sample.
+
+## How does `boot()` obtain the BCa correction?
+
+The `boot()` package has the information it needs to calculate the BCa interval because it knows the original statistic and the bootstrap replicates.
+
+For the acceleration component, `boot.ci()` uses jackknife information when necessary.
+
+The jackknife is similar to bootstrap resampling, but instead of sampling with replacement, it simply systematically leaves out one observation at a time until each observation has been left out once.
+
+The resulting collection of jackknife estimates provides information about how sensitive the statistic is to individual observations.
+
+This technique is useful for estimating the acceleration parameter.
+
+## An important warning
+
+BCa is often described as a more sophisticated or more accurate bootstrap confidence interval than the percentile interval.
+
+That description needs some qualification.
+
+**BCa does not make an inappropriate bootstrap appropriate.**
+
+For example, if we have strongly dependent time-series observations and randomly resample individual observations, calculating a BCa interval does not fix the fact that we destroyed the dependence structure.
+
+Similarly, if our sample is badly biased, BCa cannot correct the sampling design.
+
+The order of operations is therefore important:
+
+1.  Choose an appropriate bootstrap method
+
+2.  Generate an appropriate bootstrap distribution
+
+3.  Choose an appropriate confidence interval method
+
+BCa addresses the third step. It does not replace the first two.
+
+## Summary
+
+We can now distinguish three different ideas that are sometimes confused.
+
+### Bootstrap assumptions
+
+The bootstrap relies on the observed data's being a reasonable representation of the population and requires a resampling scheme appropriate for the data structure.
+
+### Bootstrap method
+
+The method determines **what we resample**:
+
+- observations;
+- residuals;
+- residuals within strata;
+- blocks;
+- wild-bootstrap weights;
+- or another structure appropriate to the problem.
+
+### Bootstrap confidence interval
+
+Once we have a bootstrap distribution, we still have to decide how to turn that distribution into a confidence interval.
+
+We have seen two methods:
+
+**Percentile:** and **BCa:**
+
+## Replicate sample size
+
+The bootstrap sample size is not the same thing as the original sample size
+
+A common misconception is that using `R = 5000` somehow gives us a sample size of 5,000.
+
+It does not.
+
+If our original sample contains 30 observations, each bootstrap sample still contains 30 observations:
+
+The argument `R = 5000` means that we create 5,000 bootstrap replicates.
+
+Increasing `R` gives us a more precise numerical approximation to the bootstrap distribution. It does **not** provide more information about the population.
+
+The original sample size controls how much information we have about the population. The number of bootstrap replicates controls how accurately we approximate the bootstrap distribution using simulation.
+
+Nobody will argue with a replicate sample size of 5000, or likely even 1000. However, if the bootstrap procedure is slow, having 1000 replicate samples may take too long to compute (depending on your situation). It might be that the bootstrap distribution can be approximated with far fewer replicates.
+
+If computational efficiency is a concern:
+
+1.  Try using 200 replicates.
+2.  Now, go to 300 replicates.
+3.  Compare the resulting distributions.
+4.  If the distributions are similar, 200 is sufficient.
+5.  If not, then combine the 200-replicate sample with the 300 replicate sample to obtain a 500 replicate sample and compare it to the 300-replicate sample.
+6.  If the bootstrap distributions look similar, then 300 suffices.  If not, maybe just use 1000.
+
+## Further Reading
+
+There are several good text books on bootstrap methods.  Some, e.g., Hall (1992) are very technical, while others are more accessible.  For a list of some of the better known references, see Gilleland (2020ab).  
+
+## References
+
+Gilleland, E., 2020a. Bootstrap methods for statistical inference. Part I: Comparative forecast verification for continuous variables. Journal of Atmospheric and Oceanic Technology, 37 (11), 2117 - 2134, doi: 10.1175/JTECH-D-20-0069.1.
+
+Gilleland, E., 2020b. Bootstrap methods for statistical inference. Part II: Extreme-value analysis. Journal of Atmospheric and Oceanic Technology, 37 (11), 2135 - 2144, doi: 10.1175/JTECH-D-20-0070.1.
+
+Hall, P., 1992. *The Bootstrap and Edgeworth Expansion*. Springer-Verlag, New York, NY, 352 pp.
+
+Henderson, H.V. and P. F. Velleman, 1981. “Building Multiple Regression Models Interactively.” *Biometrics*, **37**(2), 391–411. [doi:10.2307/2530428](https://doi.org/10.2307/2530428).
+
+Davison, A. and D. Hinkley, 1997. *Bootstrap Methods and Their Applications*.
+  Cambridge University Press, Cambridge. ISBN 0-521-57391-2.
+  doi:10.1017/CBO9780511802843 <https://doi.org/10.1017/CBO9780511802843>.
