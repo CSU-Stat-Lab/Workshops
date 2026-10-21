@@ -1,0 +1,683 @@
+---
+title: 'CSU Stat Lab Workshop Series: Generalized Linear Models'
+author: "Eric Gilleland"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load( tidyverse, kableExtra, GLMsData, tweedie, statmod, MASS, 
+                datasets, car, nnet, extRemes )
+```
+
+# Franklin A. Graybill Statistics Laboratory
+
+**Stat Lab**
+
+- Expert statistical support for CSU researchers
+- Advice on study design, data analysis, and statistical software
+- Support for grant proposals and funded projects
+- Stat Lab faculty/staff:
+  - Dr. Ann Hess <https://scholar.google.com/citations?hl=en&user=oY2onasAAAAJ>
+  - Dr. Eric Gilleland <https://scholar.google.com/citations?user=63FaSg0AAAAJ&hl=en&oi=ao>
+- <https://statlab.colostate.edu>
+
+## Services
+
+- **Appointments** with faculty/staff consultants
+  - Support relating to research proposals, study design, more complicated analyses, manuscript preparation, etc.
+- **Drop-in with Data**
+  - Guidance with data formatting, data "wrangling", data visualization, and common statistical analyses
+  - No appointment necessary
+- Go to <https://statlab.colostate.edu/schedule-a-consulting-appointment/> to schedule an appointment or see the drop-in schedule and sign-in information
+
+## Stat Lab Funding
+
+- There is no charge for general consulting for graduate students, vet residents, or initial faculty meetings
+- This service is supported by:
+  - Statistics Department
+  - Ag Experiment Station
+  - College of Natural Sciences
+  - College of Veterinary Medicine and Biomedical Sciences
+- We rely on support from individual faculty users. Even small contributions are very welcome
+  - <https://statlab.colostate.edu/support/>
+- Support requested for grant-funded projects
+- Fee-for-service data analysis is available for projects that go beyond general consulting
+
+# Getting started
+
+You can download this R markdown file, `CSU_Stat_Lab_Sorkshop_Series_GLM.Rmd`, from: <https://github.com/CSU-Stat-Lab/Workshops> if you want to follow along.
+
+Many of the example data sets are available in the R package `GLMsData` (Dunn and Smyth 2022).
+
+This material makes use of the packages: `tidyverse` (in particular, `dplyr` and ggplot2`),`kableExtra`and`boot\`.
+
+```{r}
+citation()
+citation("tidyverse")
+citation("dplyr")
+citation("ggplot2")
+citation("kableExtra")
+citation("boot")
+```
+
+# Generalized Linear Models (GLM's)
+
+My main source for this material is Dunn and Smyth (2018), which is an excellent introduction to both linear models and generalized linear models. The R code is mostly a direct copy from this book.
+
+## Why Use a GLM?
+
+A generalized linear model is useful when:
+
+- The variance is not constant but can be modeled as a function of the mean.
+- the response (or residuals) are not normally distributed but follow a distribution that can be written as something called an exponential dispersion model (EDM).
+- Many common distributions can be written in the EDM form, such as the:
+  - Poisson,
+  - normal,
+  - binomial,
+  - negative binomial,
+  - Gamma
+  - and more.
+
+## Main Objectives
+
+1.  Learn the form of a GLM.
+
+2.  Know when to use a GLM, and which family of distributions.
+
+3.  Fit a GLM in R.
+
+4.  Interpret the output.
+
+## The Exponential Dispersion Model
+
+Probability density (or mass if discrete data) functions that can be written in the following form are called exponential dispersion models (EDMs).
+
+$$
+f(x;\theta,\phi) = a(x,\phi) \exp\left\{ \frac{x\theta - \kappa(\theta)}{\phi} \right\},
+$$
+
+where
+
+- $\theta$ is called the *canonical* parameter,
+- $\kappa(\theta)$ is a known function, called the *cumulant* function,
+- $\phi>0$ is the *dispersion* parameter, and
+- $a(x,\phi)$ is a normalizing function that ensures the EDM is a distribution.
+
+The cumulant function, $\kappa(\theta)$, turns out to be the key to the utility of the GLM as it enables the variance to be modeled as a function of the mean.
+
+In this way, the GLM utilizes all of the data to estimate the variance, but without the assumption of a constant variance. Instead, the assumption is that the chosen family for the GLM correctly models the heteroskedasticity.
+
+### Example: the normal distribution is an EDM
+
+The normal density is given by
+
+$$
+f(X;\mu,\sigma^2)=\frac{1}{\sqrt{2\pi\sigma^2}}\exp\left\{\frac{(X-\mu)^2}{2\sigma^2}\right\},
+$$ which can be re-written in the form:
+
+$$
+\frac{1}{\sqrt{2\pi\sigma^2}}\exp\left\{\frac{X\mu-\frac{\mu^2}{2}}{\sigma^2}-\frac{X^2}{2\sigma^2}\right\}.
+$$
+
+Comparing this form to that of the general EDM shows that:
+
+- $\theta=\mu$,
+- $\kappa(\theta)=\mu^2/2=\theta^2/2$,
+- $\phi=\sigma^2$, and
+- the normalizing constant is $a(x;\phi)=(2\pi\sigma^2)^{-1}\exp\{-x^2/(2\pi\sigma^2)\}$.
+
+### The mean and variance of an EDM
+
+The mean of $X$ that follows an EDM is given by
+
+$$
+E[X]=\mu=\frac{d\kappa(\theta)}{d\theta},
+$$
+
+and its variance is given by
+
+$$
+\mbox{Var}(X)=\phi\frac{d^2\kappa(\theta)}{d\theta^2}.
+$$
+
+Because the variance must be positive, it follows that $\frac{d^2\kappa(\theta)}{d\theta^2}>0$, which means that $d\mu/d\theta>0$. Therefore, $\mu$ must be a monotonically increasing function of $\theta$. And it can be shown that
+
+$$
+\mbox{Var}(\mu)=\frac{d\mu}{d\theta}.
+$$
+
+That is, the variance is a function of the mean, and $\mbox{Var}(X)=\phi\mbox{Var}(\mu)$. This variance function, it turns out, uniquely determines the class of EDM.
+
+### The most common GLM distribution families
+
+The following table shows the most common GLM families along with their canonical parameter, $\theta$, cumulant function, $\kappa(\theta)$, mean ($\mu$) and variance ($\phi$) functions, respectively.
+
+| Family | Canonical Parameter $\theta$ | Cumulant Function $\kappa(\theta)$ | Mean Function $\mu = \kappa'(\theta)$ | Variance Function $\mbox{Var}(Y) = \phi= \\ \kappa''(\theta)$ |
+|---------------|---------------|---------------|---------------|---------------|
+| Normal (Gaussian) | $\mu$ | $\frac{\theta^2}{2}$ | $\mu$ | $\phi$ |
+| Bernoulli | $\log\left(\frac{\mu}{1-\mu}\right)$ | $\log\left(1 + e^\theta\right)$ | $\frac{e^\theta}{1+e^\theta}$ | $\phi\mu(1-\mu)$ |
+| Multinomial with $i=1,\ldots,k$ categories | $\theta_i=\log\left(\frac{\mu_i}{\mu_k}\right),\\ i=1,\ldots,k-1$ | $\log\left(1+\sum_{i=1}^{k-1}e^{\theta_i}\right)$ | $\mu_i=\frac{e^{\theta_i}}{1+\sum_{j=1}^{k-1}e^{\theta_j}}, \\ i=1,\ldots,k-1 \\ \mu_k=1 - \sum_{i=1}^{k-1}\mu_i$ | $\phi\mu_i(1-\mu_i), \\ \mbox{Cov}(Y_i,Y_j)= \\ -\phi\mu_i\mu_j$ |
+| Poisson | $\log \mu$ | $e^\theta$ | $e^\theta$ | $\phi \mu$ |
+| Gamma | $-1/\mu$ | $-\log(-\theta)$ | $-1/\theta$ | $\phi\mu^2$ |
+| Inverse Gaussian | $-1/(2\mu^2)$ | $-\sqrt{-2\theta}$ | $-1/(2\theta)^{1/2}$ | $\phi \mu^3$ |
+| Tweedie | $\frac{\mu^{1-p}}{1-p}$ | $\frac{\mu^{2-p}}{2-p}$ | $\mu$ | $\phi \mu^p$ |
+
+The following list summarizes the utility of each family, and when one might use them.
+
+1.  Normal (Gaussian)
+
+- Use when the response is continuous and roughly symmetric about the mean.
+- That is, whenever you can simply use a "regular" LM.
+- Usually use the identity link function.
+- Examples: heights, weights, test scores, measurement errors.
+
+2.  Bernoulli
+
+- Use when the response is binary (two categories).
+- Generally, use the logit link, which yields what is called a logistic regression, which is the canonical parameter for this family.
+- Examples: Successes and failures, disease or no disease
+
+3.  Poisson
+
+- Use when the response is a count (or any non-negative integer-valued response) when the data are not over-dispersed, and for rare events (see examples that follow in subsequent sections).
+
+4.  Gamma
+
+- Use when the response is **continuous**, **positive** and skewed to the right.
+- Choice of link functions, but often used with the log link function.
+- Variance increases quadratically with the mean.
+- Examples: waiting times, rainfall amounts
+
+5.  Inverse Gaussian
+
+- Use when the response is **continuous**, **positive**, and highly skewed.
+- Variance increases more rapidly with the mean than a Gamma family.
+- Often used with positive, heavy-tailed response variables.
+- Examples: survival times, lifetime of devices, chemical reaction times.
+
+6.  Tweedie
+
+- Use when either the response is continuous, positive and highly skewed, possibility of exact zeros, OR if the variance follows a power law (i.e., $\mbox{Var}(Y)\propto \mu^k$).
+- Most flexible choice as several of the other families are special cases of this family.
+- Examples: Insurance claims (many zeros, some large claims), rainfall (especially if there are days without rainfall), ecological counts.
+
+7.  Multinomial
+
+- Use when the response is categorical with more than 2 classes with the outcome's being the counts of observations in each category.
+- Generalizes the Bernoulli and also uses the logit link function.
+- Examples: Survey responses (disagree, don't care, agree), product choices, vote counts in elections with more than 2 candidates.
+
+## The Model
+
+As with an LM, the GLM consists of two components:
+
+- the systematic component
+  - This part is the linear predictor part
+- the random component
+  - This component follows an EDM
+
+Mathematically,
+
+$$
+\left\{
+\begin{array}{l}
+Y_i \sim \mbox{EDM}(\mu_i, \phi / w_i) \\
+g(\mu_i) = \beta_0 + \beta_1 x_{1i} + \cdots + \beta_p x_{pi}
+\end{array}
+\right.
+$$ The structure of a GLM is specified by the choice of EDM family and the choice of the link function. That is,
+
+GLM( EDM, Link function).
+
+Several transformations of the response variable in an LM are associated with an approximate GLM. For example,
+
+- the typical log transformation is approximately a GLM in the Gamma family with a log link function.
+- The square-root transformation approximates a GLM in the Poisson family with the square-root link function.
+
+The EDM family is chosen to reflect the
+
+- support of the data and
+- the mean-variance relationship.
+
+The link function is chosen to achieve linearity.
+
+The GLM has the advantage of modeling the data on the original scale (not the transformed scale) by avoiding artificial transformations and giving realistic probability statements.
+
+For example, suppose the systematic component of the GLM uses a log link, then
+
+$$
+\log\mu=\beta_0+\beta_1x\implies \mu=\exp(\beta_0)\exp(\beta_1)^x
+$$
+
+thus enabling a direct interpretation of the parameters as the mean. As opposed to the linear model with a logarithmic transformation, which gives
+
+$$
+E[\log Y]=\beta_0+\beta_1x\neq\mu.
+$$ \### Example: The usual LM
+
+The usual LM is a special case of the GLM, as evidenced earlier by the fact that the normal distribution is an EDM. The LM given by:
+
+$$
+Y_j = \beta_0 + \beta_1\cdot X_{1j} + \cdots + \beta_p\cdot X_{pj} + \varepsilon_j,
+$$
+
+has systematic component:
+
+$$
+g(\mu_j)=\mu_j=\hat Y_j=\beta_0 + \beta_1\cdot X_{1j} + \cdots + \beta_p\cdot X_{pj}
+$$
+
+with the identity link function, and random component:
+
+$$
+\varepsilon_j\sim N(0,\sigma_{\varepsilon}^2)
+$$ noting that the variance function is $\mbox{Var}(\mu)=\sigma_{\varepsilon}^2=\phi$, a constant.
+
+**Important!** Using a log link with the normal family in a GLM is different from performing a log transform and fitting an LM.
+
+## Diagnostic plots
+
+The main assumptions for a GLM include:
+
+- Lack of outliers (the same model is appropriate for all values).
+- The correct link function is used.
+- Linearity: All explanatory variables are included in the systematic component and on the correct scale.
+- The correct variance function, $\mbox{Var}(\mu)$, is used.
+- The dispersion parameter, $\phi$, is constant.
+- The response variable is independent.
+- The response variable follows the correct EDM.
+
+The first assumption pertains to the overall suitability of the model.
+
+Subsequent assumptions above are ordered from first-moment (the mean) assumptions to second-moment (the variance) assumptions to third- and higher-moment assumptions until the final assumption that the entire distribution is correct. 
+
+These assumptions need only hold approximately.
+
+To assess the assumptions in an LM, the residuals suffice. 
+
+However, with the GLM, the variance depends on the mean. So, the residuals need to be modified for diagnostic purposes. 
+
+R's `resid`/`residuals` function automatically returns the deviance residuals (one type of way to modify the raw residuals appropriately) without having to worry about it. 
+
+Other appropriate residual types can be obtained by specifying the `type` argument to `resid` (e.g., `type="pearson"`).
+
+**For this workshop, let's not get bogged down in the details of various residuals.  Nevertheless, some detail is provided below for those who wish to peruse them later.**
+
+Deviance residuals are defined as:
+
+$$
+r_D=\mbox{sign}(y_i-\hat\mu_i)\sqrt{d(y_i,\hat\mu_i)},
+$$
+
+where $d(y_i,\hat\mu)$ is the contribution of $y_i$ to the deviance, and depends on the assumed distribution family used in the GLM. In general, it is defined to be:
+
+$$
+d(y_i,\hat\mu)=2[\ell(y_i;y_i)-\ell(\hat\mu_i;y_i)].
+$$
+
+The Pearson residual is defined as:
+
+$$
+r_P=\frac{y_i-\hat\mu_i}{\sqrt{\mbox{Var}(\hat\mu)}}.
+$$
+
+Both of the deviance and Pearson residuals approximately follow a normal distribution if the assumptions for the model are correct, apart from variability in $\hat\mu_i$ and $\hat\phi$.
+
+Because some EDMs have discrete support (e.g., count and categorical responses), the normality of the residuals is not always guaranteed when the assumptions are correct for these families of distributions; namely, the binomial, Poisson and gamma distributions. In this case, the quantile residuals are used (`qresid` in R) and are defined by:
+
+$$
+r_Q=\Phi^{-1}(F(y_i;\hat\mu_i,\phi)),
+$$
+
+where $F$ is the cumulative distribution function for the EDM and $\Phi^{-1}(\cdot)$ is the inverse cumulative distribution for the standard normal distribution. These residuals follow a normal distribution when the assumptions are correct, apart from variability in $\hat\mu_i$ and $\hat\phi$.
+
+The usual residual against fitted values plots from LM, using an appropriate form of residual for the GLM, are used to diagnose problems with the assumptions for the systematic component of a GLM; namely: 
+
+- lack of outliers, 
+- correct linear form, and 
+- variance function. 
+
+Independence can be checked by plotting residuals against their lagged values, but that is beyond the scope of this treatment.
+
+The random component is checked via normal qq-plots of the GLM-correct residuals. However, because of variability in the $\hat\mu_i$ terms and $\hat\phi$, some amount of leeway needs to be given.
+
+Interestingly, the GLM also has an analogous hat matrix as an LM that is used in estimating the parameters of the model. Therefore, outliers and influential observations can be checked using the same measures as are used for LMs (e.g., Cook's distance). The linearity assumption is particularly checked using something called the working values that involve the leverages from the hat matrix.
+
+
+## Examples
+
+### Count response
+
+For count data, the Poisson or negative binomial families are appropriate. 
+
+A Poisson distributed random variable has the curious feature that its mean value is the same as its variance. 
+
+That is, if $X\sim\mbox{Poisson}(\lambda)$, then $E[X]=\mbox{Var}(X)=\lambda$. Real count data tend to be over dispersed, meaning that $\mbox{Var}(X)>E[X]$, so the **negative binomial** family is generally preferred. Alternatively, the mean of the Poisson can be made to vary, which can be applied in `glm` using the `quasipoisson` family.
+
+Surprisingly, the negative binomial is not included in the possible families that the R function `glm` can use. Instead, the `glm.nb` function from package `MASS` (Venables and Ripley 2002) is used. The function `glm.convert` can be used to convert the style of output from `glm.nb` to that of `glm`.
+
+#### Satellite Crabs
+
+The first example is from Dunn and Smyth (2018) and uses the `hcrabs` data from package `GLMsData` (Dunn and Smyth 2022). 
+
+The data are from a study of female nesting horseshoe crabs each with an attached male, whereby the number of other nearby male crabs, called Satellites, were counted (Agresti 2007; Brockmann 1996). 
+
+The data include the 
+
+- color of the female, 
+- condition of her spine and 
+- her weight. 
+
+The purpose of the study was to understand the factors that attract satellite crabs. 
+
+The `fpois` function from package `extRemes` (Gilleland and Katz 2016a) can be used to test whether the mean and variance are equal, indicating whether or not one can use the Poisson distribution instead of the negative binomial.
+
+```{r}
+data( "hcrabs" )
+
+fpois( hcrabs$Sat )
+
+with( hcrabs, {
+  logSat <- log(Sat+1)
+  plot( jitter( Sat ) ~ Wt, ylab = "Sat" )
+  plot( jitter( logSat ) ~ log(Wt), ylab = "log(Sat+1)" )
+  plot( jitter( Sat ) ~ Width, ylab = "Sat" )
+  plot( jitter( logSat ) ~ log(Width), ylab = "log(Sat+1)" )
+  plot( logSat ~ Spine, ylab = "log(Sat+1)" )
+})
+
+with( hcrabs, {
+  plot( log(Wt) ~ log(Width) )
+  plot( log(Wt) ~ Col )
+  plot( log(Wt) ~ Spine )
+})
+
+cr.nb <- glm.nb( Sat ~ log(Wt), data = hcrabs )
+cr.nb
+glm.convert( cr.nb )
+printCoefmat( coef( summary( cr.nb, dispersion = 1 )))
+
+
+plot( resid( cr.nb ) ~ sqrt( fitted( cr.nb ) ) )
+plot( qresid( cr.nb ) ~ sqrt( fitted( cr.nb ) ) )
+plot( cooks.distance( cr.nb ), type = "h", col = "darkblue" )
+qqnorm( resid( cr.nb ) )
+
+cr.nb2 <- glm.nb( Sat ~ log(Wt) + log(Width) + Spine + Col, 
+                  data = hcrabs )
+
+plot( resid( cr.nb2 ) ~ sqrt( fitted( cr.nb2 ) ) )
+plot( qresid( cr.nb2 ) ~ sqrt( fitted( cr.nb2 ) ) )
+plot( cooks.distance( cr.nb2 ), type = "h", col = "darkblue" )
+qqnorm( resid( cr.nb2 ) )
+
+cr.m1 <- glm( Sat ~ log(Wt) + log(Width) + Spine + Col, data = hcrabs,
+              family = quasipoisson )
+anova( cr.m1, test = "F" )
+
+
+cr.m2 <- glm( Sat ~ log(Wt), family = quasipoisson, data = hcrabs )
+printCoefmat( coef(summary(cr.m2)))
+
+plot( resid( cr.m2) ~ sqrt(fitted(cr.m2)), main = "Deviance Residuals",
+      ylab = "Deviance Residuals", xlab = "Square-root of fitted values" )
+plot( cooks.distance( cr.m2 ), type = "h", col = "darkblue" )
+qqnorm( resid( cr.m2 ) )
+
+```
+
+
+#### Hurricane counts over time
+
+Another example considers the number of hurricanes over time, with an hypothesis that the number is changing as the climate changes. This example uses data and the `fpois` function from the `extRemes` package (Gilleland and Katz 2016a) and is from Gilleland and Katz (2016b).
+
+```{r}
+data( "damage" )
+NumHur <- aggregate( Dam ~ Year, data = damage, FUN = length )
+colnames( NumHur ) <- c("Year","Count")
+
+plot( Count ~ Year, data = NumHur, type = "h", col = "darkblue", 
+      las = 2, lwd = 1.5 )
+
+# Test for equality of mean and variance.
+fpois( NumHur$Count )
+
+fit <- glm( Count ~ Year, data = NumHur, family = poisson )
+fit
+plot( fit )
+
+plot( qresid( fit ), sqrt( fitted( fit ) ), xlab = "Quantile Residuals",
+      ylab = "sqrt(fitted values)")
+qqnorm( qresid( fit ) )
+
+fit <- glm( Count ~ I(Year - 1900), data = NumHur, family = poisson )
+fit
+plot( fit )
+
+plot( qresid( fit ), sqrt( fitted( fit ) ), xlab = "Quantile Residuals",
+      ylab = "sqrt(fitted values)")
+qqnorm( qresid( fit ) )
+printCoefmat( coef(summary(fit)))
+
+```
+
+### Occurrence of rare events
+
+When interest is in the frequency of occurrence of rare events, it turns out that the Poisson distribution enjoys theoretical support for modeling them.
+
+Such a model assumes a constant frequency, but suppose the frequency changes (i.e., the mean and subsequently variance changes with predictor variable). In this situation, a GLM is an appropriate model.
+
+This example continues with the hurricane damage data from the previous section. This time, however, it is the occurrence of large damage that is of interest. The function `threshrange.plot` and `mrlplot` are functions used for selecting a threshold appropriate for assuming that an extreme-value distribution (e.g., the Poisson for rare occurrences) is met, and are from package `extRemes` (Gilleland and Katz 2016a).
+
+```{r}
+hist( damage$Dam ) # Heavy tail!
+plot( Dam ~ Year, data = damage, type = "h", lwd = 2, las = 2 )
+threshrange.plot( damage$Dam, r = c(2,40), nint = 50, type = "GP" )
+mrlplot( damage$Dam )
+dam2 <- data.frame( damage, "gt.2.bill" = damage$Dam > 2 ) 
+
+fpois( dam2$gt.2.bill )
+
+fit <- glm( gt.2.bill ~ Year, data = dam2, family = poisson )
+fit
+plot( fit )
+plot( sqrt( fitted( fit ) ), qresid( fit ), xlab = "Sqrt. Fitted Values",
+      ylab = "Quantile Residuals" )
+qqnorm( qresid( fit ) )
+summary( fit )
+
+```
+
+### Binary response
+
+When the response is binary, a binomial family can be used to perform what is often referred to as logistic regression. 
+
+It uses a logit link function with the binomial family. The logit link is the logarithm of the odds ratio. 
+
+This example uses the `mtcars` data from R. Using `type="response"` in calls to functions like `predict` and `contrast` will give the output in terms of the probabilities or odds ratios rather than on the log scale. 
+
+Note that the examples above had binary responses, but the Poisson family is used. The reason is that the binomial distribution is not appropriate when the event of interest is rare, and under certain conditions, the Poisson family is appropriate.
+
+```{r}
+fit <- glm( am ~ wt + hp, data = mtcars, family = binomial )
+summary( fit )
+plot( fit )
+plot( sqrt(fitted( fit ) ), qresid( fit ) ) 
+
+hist( predict( fit, type = "response" ), col = "darkblue" )
+
+# To get the odds ratios
+exp( coef( fit ) )
+```
+
+The next example comes from the `datasets` package in R (R Core Team 2025). It concerns the fate of passengers on the Titanic according to economic class, sex, age and whether or not they survived.
+
+```{r}
+data(Titanic)
+df <- as.data.frame(Titanic)
+
+fit <- glm(Survived ~ Class + Sex + Age,
+              data = df,
+              family = binomial,
+              weights = Freq)
+
+summary(fit)
+
+plot( fit )
+
+```
+
+### Multi-level categorical response
+
+The `glm` function does not include the multinomial family, so here, the `multinom` function from the `nnet` package is used (Venables and Ripley 2002).
+
+```{r eval = FALSE}
+model <- multinom(Species ~ Sepal.Length + Sepal.Width + 
+                    Petal.Length + Petal.Width, data = iris)
+summary( model )
+coef( model ) # log odds-ratios
+exp( coef( model ) ) # odds ratios
+
+```
+
+The interpretation of the output from `multinom` is that the intercept term gives the log-odds ratio (or, here, the odds ratio because they are exponentiated) of being versicolor as opposed to virginica when all the predictor variables are zero, which is not sensible here. 
+
+For the other values, the value of the coefficient is the increase in the odds ratio for a unit increase in the predictor variable. So, for sepal length for versicolor, the (exponentiated) coefficient is about 0.006 meaning that for a unit increase in sepal length, the odds ratio of its being versicolor increases by 0.6%.
+
+# Advanced
+
+## The Tweedie Distribution
+
+The Tweedie GLM uses a certain form of EDM that has a variance function of the form $\mu^\xi$ where $\mu$ is the mean and $\xi$ is an index parameter. The choice of $\xi$ is determined by the data distribution and can be any real number outside of the interval $(0,1)$:
+
+-   $\xi\leq 0$: suitable for modeling continuous data (the normal distribution is a special case). Generally not used.
+-   $\xi=1$: suitable for modeling discrete data (Poisson is a special case).
+-   $1<\xi<2$: suitable for continuous data with exact zeros but are otherwise continuous.
+-   $\xi\geq 2$: suitable for positive continuous data with the Gamma distribution a special case when $\xi=2$ and inverse Gamma when $\xi=3$. As $\xi$ increases, the distributions become increasingly right-skewed.
+
+## Coding it up in R
+
+This example closely follows those in Dunn and Smyth (2018). See the help file `?quilpie` to learn about the data in the example. Not surprisingly, `glm` does not include the Tweedie family, but it can with the help of some other packages. Namely, the R packages `tweedie` (Dunn and Smyth 2005; 2008; Dunn 2026) and `statmod` (Chen et al 2025; Dunn and Smyth 1996; Giner and Smyth 2016; Hu and Smyth 2009; Phipson and Smyth 2010; Smyth 1998a,b; 2002).
+
+```{r dataexplore}
+data( quilpie )
+summary( quilpie )
+head( quilpie )
+sum( quilpie$Rain == 0 )
+
+```
+
+First, we estimate the index parameter, $\xi$. Recall that the variance is a function of the mean and index parameter given by $\mbox{Var}(X)=\mu^\xi$ so that $\log(\mbox{Var}(X)) = \xi\cdot\log(\mu)$.
+
+```{r estimateindexpar}
+# Group by SQI phase and take the means and variances of Rain for each phase
+mn <- with( quilpie, tapply( Rain, Phase, "mean" ) )
+mn
+vr <- with( quilpie, tapply( Rain, Phase, "var" ) )
+vr
+
+coef( lm( log(vr) ~ log( mn ) ) )
+
+# Alternativley, group by decade and do the same.
+Decade <- cut( quilpie$Year, breaks = seq( 1920, 1990, by = 10 ) )
+mn <- tapply( quilpie$Rain, Decade, "mean" )
+mn
+vr <- tapply( quilpie$Rain, Decade, "var" )
+vr
+
+coef( lm( log(vr) ~ log( mn ) ) )
+```
+
+The slope term in the above regressions is an estimate for the index parameter $\xi$. The two differ, but both are suggested to be within the range $(1,2)$. A better way to estimate this index is through the profile likelihood, which can be performed using the package **tweedie** in R, however, the example in the book did not work, but it has worked with other data, so the code is included but commented out.
+
+```{r profilelik}
+quilpie$Phase <- factor( quilpie$Phase )
+plot( Rain ~ Phase, data = quilpie, ylab = "Total July Rainfall" )
+# out <- tweedie.profile( Rain ~ Phase, do.plot = TRUE, data = quilpie )
+# xi.est <- out$xi.max
+# c( "MLE of xi" = xi.est, "CI for xi" = out$ci, "MLE of phi" = out$phi.max )
+
+```
+
+Next, it is finally time to estimate the Tweedie model. I'm going to use the value the book got from using the profile likelihood approach for $\xi$, which is 1.37 rounded to two decimal places. The nice thing about the **tweedie** package is that it creates a family that works seemlessly with `glm`, provided the **statmod** package is loaded. One difference is that two arguments must be given: `var.power` and `link.power`.
+
+The `var.power` argument is the estimated $\xi$ value. The link function in `glm` is typically given by an argument called `link`, such as `link="log"`, but for `tweedie` the link is given by the argument `link.power` which is a numeric value rather than something simple like `"log"`. The log link is given by `link.power = 0`, which is the most common choice for the Tweedie model.
+
+**Note** the package `glmmTMB` includes a function called `tweedie` that differs from the one from `statmod`.  Therefore, the call to the `statmod` function explicitly tells R to use it and not some other one (i.e., `statmod::tweedie`.
+
+```{r tweedieestimate}
+fit <- glm( Rain ~ Phase, data = quilpie, 
+            family = statmod::tweedie(var.power = 1.37, 
+                                      link.power = 0) )
+summary( fit )
+```
+
+Now that the model has been fitted to the data, we can check the diagnostic plots. For the qq-plot, it is recommended to use something called the quantile residuals for models with exact zeros as a small amount of randomness is added to the zeros to improve the interpretation of the qq-plot. Other forms of plot are shown as they may be useful for other situations. Note, however, that we can also just use the `plot` function and obtain reasonable diagnostics that suggest the model is reasonable too (outliers maybe?). Pearson residuals obtained below are residuals that attempt to remove the effect of non-constant variance by dividing them by a non-constant variance.
+
+```{r fitdiagnostics}
+print(plot( fit ))
+
+dres <- resid( fit ) # default residuals
+pres <- resid( fit, type = "pearson")
+qres1 <- qresid( fit )
+qres2 <- qresid( fit )
+
+# Now to check if the normal assumption for the residuals is reasonable.
+par( mfrow = c(2,2) )
+qqnorm( dres, main = "Deviance Residuals (default)" ); qqline( dres )
+qqnorm( pres, main = "Pearson Residuals" ); qqline( pres )
+qqnorm( qres1, main = "Quantile Residuals (set 1)" ); qqline( qres1 )
+qqnorm( qres2, main = "Quantile Residuals (set 2)" ); qqline( qres2 )
+```
+
+Finally, the AIC is not reported with the `summary` command because it slows the computations down. It can be obtained via the `AICtweedie` function from package *tweedie*.
+
+## References
+
+Agresti, A., 2007. *An Introduction to Categorical Data Analysis*, 2nd Edition, Wiley-Interscience, New York, NY, 372 pp. <doi:10.1002/0470114754>.
+
+Bates, D., M. Maechler, B. Bolker, and S. Walker, 2015. Fitting Linear Mixed-Effects Models Using lme4. *Journal of Statistical Software*, **67**(1), 1-48. <doi:10.18637/jss.v067.i01>.
+
+Brooks, M. E., K. Kristensent, K. J. van Benthem, A. Magnusson, C. W. Berg, A. Nielsen, H. J. Skaug, M. Maechler, and B. M. Bolker, 2017. glmmTMB Balances Speed and Flexibility Among Packages for Zero-inflated Generalized Linear Mixed Modeling. *The R Journal*, **9**(2), 378-400. <doi:10.32614/RJ-2017-066>.
+
+Brockmann, H. J., 1996. Satellite male groups in horseshoe crabs, *limulus polyphemus*. *Etology*, **102**, 1 - 21.
+
+Chen, Y, L. Chen, A. T. L. Lun, P. L. Baldoni, and G. K. Smyth, 2025. edgeR v4: powerful differential analysis of sequencing data with expanded functionality and improved support for small counts and larger datasets. *Nucleic Acids Research* **53**(2), gkaf018. (expectedDeviance function)
+
+Dunn, P. K., 2026. Tweedie: Evaluation of Tweedie exponential family models. R package version 3.0.
+
+Dunn, P. K. and Smyth, G. K., 2005. Series evaluation of Tweedie exponential dispersion models. *Statistics and Computing*, **15**(4), 267-280.
+
+Dunn, P. K. and G. K. Smyth, 2008. Evaluation of Tweedie exponential dispersion models using Fourier inversion. *Statistics and Computing*, **18**(1), 73-86.
+
+Dunn, P. K. and G. K. Smyth, 2018. *Generalized Linear Models with Examples in R*, Springer, New York, N.Y., U.S.A. 562 pp.
+
+Dunn, P. K. and G. K. Smyth, 2022. *GLMsData: Generalized Linear Model Data Sets*. <doi:10.32614/CRAN.package.GLMsData> <https://doi.org/10.32614/CRAN.package.GLMsData>, R package version 1.4, <https://CRAN.R-project.org/package=GLMsData>.
+
+Fox J, Weisberg S (2019). *An R Companion to Applied Regression*, Third edition. Sage, Thousand Oaks CA. <https://www.john-fox.ca/Companion/>.
+
+Gilleland, E. and R. W. Katz, 2016a. extRemes 2.0: An Extreme Value Analysis Package in R. *Journal of Statistical Software*, **72** (8), 1 - 39, doi: 10.18637/jss.v072.i08.
+
+Gilleland, E. and Katz, R. W., 2016b: in2extremes: Into the R Package extremes - Extreme Value Analysis for Weather and Climate Applications. *NCAR Technical Note*, NCAR/TN-523+STR, 102 pp., doi: 10.5065/D65T3HP2.
+
+Giner G. and G. K. Smyth, 2016. statmod: probability calculations for the inverse Gaussian distribution. *R Journal* **8**(1), 339-351. (pinvgauss, qinvgauss, dinvguass and rinvgauss functions)
+
+Hu Y. and G. K. Smyth, 2009. ELDA: Extreme limiting dilution analysis for comparing depleted and enriched populations in stem cell and other assays. *Journal of Immunological Methods*, **347**, 70-78. (elda and limdil functions)
+
+Kuznetsova, A., P. B. Brockhoff, and R. H. B. Christensen, 2017. lmerTest Package: Tests in Linear Mixed Effects Models. *Journal of Statistical Software*, **82**(13), 1-26. <doi:10.18637/jss.v082.i13>.
+
+McGillycuddy, M., D. I. Warton, G. Popovic, and B. M. Bolker, 2025. Parsimoniously Fitting Large Multivariate Random Effects in glmmTMB. *Journal of Statistical Software*, **112**(1), 1-19. <doi:10.18637/jss.v112.i01> <https://doi.org/10.18637/jss.v112.i01>.
+
+Phipson B. and G. K. Smyth, 2010. Permutation p-values should never be zero: calculating exact p-values when permutations are randomly drawn. *Statistical Applications in Genetics and Molecular Biology*, **9**(1), 39. (permp function)
+
+R Core Team, 2025. R: *A Language and Environment for Statistical Computing*. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>.
+
+Smyth, G. K., 1998a. Numerical integration. In: *Encyclopedia of Biostatistics*, P. Armitage and T. Colton (eds.), Wiley, London, pp. 3088-3095. (gauss.quad and gauss.quad.prob functions)
+
+Smyth, G. K., 1998b. Optimization and nonlinear equations. In: *Encyclopedia of Biostatistics*, P. Armitage and T. Colton (eds.), Wiley, London, pp. 3174-3180. (glmgam.fit, glmnb.fit and fitNBP functions)
+
+Smyth, G. K., 2002. An efficient algorithm for REML in heteroscedastic regression. *Journal of Computational and Graphical Statistics*, **11**, 836-847. (remlscore, randomizedBlock, and mixedModel2 functions)
+
+Venables, W. N. and B. D. Ripley, B. D., 2002. *Modern Applied Statistics with S*. Fourth Edition. Springer, New York. ISBN 0-387-95457-0, 510 pp.
