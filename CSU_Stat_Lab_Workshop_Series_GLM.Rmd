@@ -51,20 +51,9 @@ You can download this R markdown file, `CSU_Stat_Lab_Sorkshop_Series_GLM.Rmd`, f
 
 Many of the example data sets are available in the R package `GLMsData` (Dunn and Smyth 2022).
 
-This material makes use of the packages: `tidyverse` (in particular, `dplyr` and ggplot2`),`kableExtra`and`boot\`.
-
-```{r}
-citation()
-citation("tidyverse")
-citation("dplyr")
-citation("ggplot2")
-citation("kableExtra")
-citation("boot")
-```
-
 # Generalized Linear Models (GLM's)
 
-My main source for this material is Dunn and Smyth (2018), which is an excellent introduction to both linear models and generalized linear models. The R code is mostly a direct copy from this book.
+My main source for this material is Dunn and Smyth (2018), which is an excellent introduction to both linear models and generalized linear models. The R code is mostly a direct copy from this book. Available for free from the CSU library (<https://colostate.primo.exlibrisgroup.com/nde/fulldisplay?vid=01COLSU_INST:FC_NDE&tab=Everything&offset=0&docid=alma991033551453103361&query=Generalized%20Linear%20Models%20with%20Examples%20in%20R&context=L&adaptor=Local%20Search%20Engine&lang=en&search_scope=MyCampus_FC_CI_PU_P>).
 
 ## Why Use a GLM?
 
@@ -291,19 +280,19 @@ The main assumptions for a GLM include:
 
 The first assumption pertains to the overall suitability of the model.
 
-Subsequent assumptions above are ordered from first-moment (the mean) assumptions to second-moment (the variance) assumptions to third- and higher-moment assumptions until the final assumption that the entire distribution is correct. 
+Subsequent assumptions above are ordered from first-moment (the mean) assumptions to second-moment (the variance) assumptions to third- and higher-moment assumptions until the final assumption that the entire distribution is correct.
 
 These assumptions need only hold approximately.
 
-To assess the assumptions in an LM, the residuals suffice. 
+To assess the assumptions in an LM, the residuals suffice.
 
-However, with the GLM, the variance depends on the mean. So, the residuals need to be modified for diagnostic purposes. 
+However, with the GLM, the variance depends on the mean. So, the residuals need to be modified for diagnostic purposes.
 
-R's `resid`/`residuals` function automatically returns the deviance residuals (one type of way to modify the raw residuals appropriately) without having to worry about it. 
+R's `resid`/`residuals` function automatically returns the deviance residuals (one type of way to modify the raw residuals appropriately) without having to worry about it.
 
 Other appropriate residual types can be obtained by specifying the `type` argument to `resid` (e.g., `type="pearson"`).
 
-**For this workshop, let's not get bogged down in the details of various residuals.  Nevertheless, some detail is provided below for those who wish to peruse them later.**
+**For this workshop, let's not get bogged down in the details of various residuals. Nevertheless, some detail is provided below for those who wish to peruse them later.**
 
 Deviance residuals are defined as:
 
@@ -333,11 +322,11 @@ $$
 
 where $F$ is the cumulative distribution function for the EDM and $\Phi^{-1}(\cdot)$ is the inverse cumulative distribution for the standard normal distribution. These residuals follow a normal distribution when the assumptions are correct, apart from variability in $\hat\mu_i$ and $\hat\phi$.
 
-The usual residual against fitted values plots from LM, using an appropriate form of residual for the GLM, are used to diagnose problems with the assumptions for the systematic component of a GLM; namely: 
+The usual residual against fitted values plots from LM, using an appropriate form of residual for the GLM, are used to diagnose problems with the assumptions for the systematic component of a GLM; namely:
 
-- lack of outliers, 
-- correct linear form, and 
-- variance function. 
+- lack of outliers,
+- correct linear form, and
+- variance function.
 
 Independence can be checked by plotting residuals against their lagged values, but that is beyond the scope of this treatment.
 
@@ -345,14 +334,13 @@ The random component is checked via normal qq-plots of the GLM-correct residuals
 
 Interestingly, the GLM also has an analogous hat matrix as an LM that is used in estimating the parameters of the model. Therefore, outliers and influential observations can be checked using the same measures as are used for LMs (e.g., Cook's distance). The linearity assumption is particularly checked using something called the working values that involve the leverages from the hat matrix.
 
-
 ## Examples
 
 ### Count response
 
-For count data, the Poisson or negative binomial families are appropriate. 
+For count data, the Poisson or negative binomial families are appropriate.
 
-A Poisson distributed random variable has the curious feature that its mean value is the same as its variance. 
+A Poisson distributed random variable has the curious feature that its mean value is the same as its variance.
 
 That is, if $X\sim\mbox{Poisson}(\lambda)$, then $E[X]=\mbox{Var}(X)=\lambda$. Real count data tend to be over dispersed, meaning that $\mbox{Var}(X)>E[X]$, so the **negative binomial** family is generally preferred. Alternatively, the mean of the Poisson can be made to vary, which can be applied in `glm` using the `quasipoisson` family.
 
@@ -360,17 +348,17 @@ Surprisingly, the negative binomial is not included in the possible families tha
 
 #### Satellite Crabs
 
-The first example is from Dunn and Smyth (2018) and uses the `hcrabs` data from package `GLMsData` (Dunn and Smyth 2022). 
+The first example is from Dunn and Smyth (2018) and uses the `hcrabs` data from package `GLMsData` (Dunn and Smyth 2022).
 
-The data are from a study of female nesting horseshoe crabs each with an attached male, whereby the number of other nearby male crabs, called Satellites, were counted (Agresti 2007; Brockmann 1996). 
+The data are from a study of female nesting horseshoe crabs each with an attached male, whereby the number of other nearby male crabs, called Satellites, were counted (Agresti 2007; Brockmann 1996).
 
-The data include the 
+The data include the
 
-- color of the female, 
-- condition of her spine and 
-- her weight. 
+- color of the female,
+- condition of her spine and
+- her weight.
 
-The purpose of the study was to understand the factors that attract satellite crabs. 
+The purpose of the study was to understand the factors that attract satellite crabs.
 
 The `fpois` function from package `extRemes` (Gilleland and Katz 2016a) can be used to test whether the mean and variance are equal, indicating whether or not one can use the Poisson distribution instead of the negative binomial.
 
@@ -396,6 +384,7 @@ with( hcrabs, {
 
 cr.nb <- glm.nb( Sat ~ log(Wt), data = hcrabs )
 cr.nb
+plot( cr.nb )
 glm.convert( cr.nb )
 printCoefmat( coef( summary( cr.nb, dispersion = 1 )))
 
@@ -428,7 +417,6 @@ qqnorm( resid( cr.m2 ) )
 
 ```
 
-
 #### Hurricane counts over time
 
 Another example considers the number of hurricanes over time, with an hypothesis that the number is changing as the climate changes. This example uses data and the `fpois` function from the `extRemes` package (Gilleland and Katz 2016a) and is from Gilleland and Katz (2016b).
@@ -447,6 +435,10 @@ fpois( NumHur$Count )
 fit <- glm( Count ~ Year, data = NumHur, family = poisson )
 fit
 plot( fit )
+plot( qresid( fit ), fitted( fit ) )
+qqnorm( qresid( fit ) )
+glm.convert( fit  )
+printCoefmat( coef( summary( fit, dispersion = 1 )))
 
 plot( qresid( fit ), sqrt( fitted( fit ) ), xlab = "Quantile Residuals",
       ylab = "sqrt(fitted values)")
@@ -482,6 +474,9 @@ fpois( dam2$gt.2.bill )
 
 fit <- glm( gt.2.bill ~ Year, data = dam2, family = poisson )
 fit
+glm.convert( fit )
+printCoefmat( coef( summary( fit, dispersion = 1 )))
+
 plot( fit )
 plot( sqrt( fitted( fit ) ), qresid( fit ), xlab = "Sqrt. Fitted Values",
       ylab = "Quantile Residuals" )
@@ -492,11 +487,11 @@ summary( fit )
 
 ### Binary response
 
-When the response is binary, a binomial family can be used to perform what is often referred to as logistic regression. 
+When the response is binary, a binomial family can be used to perform what is often referred to as logistic regression.
 
-It uses a logit link function with the binomial family. The logit link is the logarithm of the odds ratio. 
+It uses a logit link function with the binomial family. The logit link is the logarithm of the odds ratio.
 
-This example uses the `mtcars` data from R. Using `type="response"` in calls to functions like `predict` and `contrast` will give the output in terms of the probabilities or odds ratios rather than on the log scale. 
+This example uses the `mtcars` data from R. Using `type="response"` in calls to functions like `predict` and `contrast` will give the output in terms of the probabilities or odds ratios rather than on the log scale.
 
 Note that the examples above had binary responses, but the Poisson family is used. The reason is that the binomial distribution is not appropriate when the event of interest is rare, and under certain conditions, the Poisson family is appropriate.
 
@@ -542,7 +537,7 @@ exp( coef( model ) ) # odds ratios
 
 ```
 
-The interpretation of the output from `multinom` is that the intercept term gives the log-odds ratio (or, here, the odds ratio because they are exponentiated) of being versicolor as opposed to virginica when all the predictor variables are zero, which is not sensible here. 
+The interpretation of the output from `multinom` is that the intercept term gives the log-odds ratio (or, here, the odds ratio because they are exponentiated) of being versicolor as opposed to virginica when all the predictor variables are zero, which is not sensible here.
 
 For the other values, the value of the coefficient is the increase in the odds ratio for a unit increase in the predictor variable. So, for sepal length for versicolor, the (exponentiated) coefficient is about 0.006 meaning that for a unit increase in sepal length, the odds ratio of its being versicolor increases by 0.6%.
 
@@ -552,10 +547,10 @@ For the other values, the value of the coefficient is the increase in the odds r
 
 The Tweedie GLM uses a certain form of EDM that has a variance function of the form $\mu^\xi$ where $\mu$ is the mean and $\xi$ is an index parameter. The choice of $\xi$ is determined by the data distribution and can be any real number outside of the interval $(0,1)$:
 
--   $\xi\leq 0$: suitable for modeling continuous data (the normal distribution is a special case). Generally not used.
--   $\xi=1$: suitable for modeling discrete data (Poisson is a special case).
--   $1<\xi<2$: suitable for continuous data with exact zeros but are otherwise continuous.
--   $\xi\geq 2$: suitable for positive continuous data with the Gamma distribution a special case when $\xi=2$ and inverse Gamma when $\xi=3$. As $\xi$ increases, the distributions become increasingly right-skewed.
+- $\xi\leq 0$: suitable for modeling continuous data (the normal distribution is a special case). Generally not used.
+- $\xi=1$: suitable for modeling discrete data (Poisson is a special case).
+- $1<\xi<2$: suitable for continuous data with exact zeros but are otherwise continuous.
+- $\xi\geq 2$: suitable for positive continuous data with the Gamma distribution a special case when $\xi=2$ and inverse Gamma when $\xi=3$. As $\xi$ increases, the distributions become increasingly right-skewed.
 
 ## Coding it up in R
 
@@ -605,7 +600,7 @@ Next, it is finally time to estimate the Tweedie model. I'm going to use the val
 
 The `var.power` argument is the estimated $\xi$ value. The link function in `glm` is typically given by an argument called `link`, such as `link="log"`, but for `tweedie` the link is given by the argument `link.power` which is a numeric value rather than something simple like `"log"`. The log link is given by `link.power = 0`, which is the most common choice for the Tweedie model.
 
-**Note** the package `glmmTMB` includes a function called `tweedie` that differs from the one from `statmod`.  Therefore, the call to the `statmod` function explicitly tells R to use it and not some other one (i.e., `statmod::tweedie`.
+**Note** the package `glmmTMB` includes a function called `tweedie` that differs from the one from `statmod`. Therefore, the call to the `statmod` function explicitly tells R to use it and not some other one (i.e., `statmod::tweedie`.
 
 ```{r tweedieestimate}
 fit <- glm( Rain ~ Phase, data = quilpie, 
